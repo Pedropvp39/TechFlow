@@ -8,6 +8,7 @@ Loja demonstrativa de pecas de PC feita em PHP, MySQL, HTML, CSS e JavaScript. O
 - Apache ativo.
 - MySQL ativo.
 - PHP 8.0 ou superior.
+- Deixar o site na pasta `Projeto-Integrador`.
 - Extensoes PHP `mysqli`, `fileinfo` e `mbstring` habilitadas.
 
 ## 2. Instalacao no XAMPP
