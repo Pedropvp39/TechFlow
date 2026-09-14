@@ -126,7 +126,7 @@ function validar_senha(?string $senha, bool $obrigatorio = true): array
         return [true, ''];
     }
 
-    if (mb_strlen($senha, 'UTF-8') <= 8) {
+    if (mb_strlen($senha, 'UTF-8') < 8) {
         return [false, 'A senha deve ter no mínimo 8 caracteres.'];
     }
 
@@ -188,16 +188,17 @@ function seed_users(): void
 {
     try {
         $db = db_connect();
+        $senhaPadrao = 'Teste123';
 
         $staffUsers = [
-            ['Cliente Demo', 'demo@techflow.com', '1998-05-20', 'customer', 0, ''],
-            ['Administrador', 'admin@techflow.com', '1990-01-15', 'admin', 1, 'admin123'],
-            ['Desenvolvedor Lead', 'dev@techflow.com', '1994-03-10', 'developer', 0, 'dev12345'],
-            ['Atendente Suporte', 'suporte@techflow.com', '1996-07-22', 'support', 0, 'supp1234'],
-            ['Moderador de Conteúdo', 'mod@techflow.com', '1995-11-05', 'moderator', 0, 'mod12345'],
-            ['Gerente da Loja', 'gerente@techflow.com', '1992-09-18','manager', 0, 'man12345'],
-            ['Analista Financeiro', 'financeiro@techflow.com', '1991-04-30', 'financial', 0, 'fin12345'],
-            ['Operador Logístico', 'logistica@techflow.com', '1993-12-12','logistics', 0, 'log12345'],
+            ['Cliente Demo', 'demo@techflow.com', '1998-05-20', $senhaPadrao, 'customer', 0, ''],
+            ['Administrador', 'admin@techflow.com', '1990-01-15', $senhaPadrao, 'admin', 1, 'admin123'],
+            ['Desenvolvedor Lead', 'dev@techflow.com', '1994-03-10', $senhaPadrao, 'developer', 0, 'dev12345'],
+            ['Atendente Suporte', 'suporte@techflow.com', '1996-07-22', $senhaPadrao, 'support', 0, 'supp1234'],
+            ['Moderador de Conteúdo', 'mod@techflow.com', '1995-11-05', $senhaPadrao, 'moderator', 0, 'mod12345'],
+            ['Gerente da Loja', 'gerente@techflow.com', '1992-09-18', $senhaPadrao, 'manager', 0, 'man12345'],
+            ['Analista Financeiro', 'financeiro@techflow.com', '1991-04-30', $senhaPadrao, 'financial', 0, 'fin12345'],
+            ['Operador Logístico', 'logistica@techflow.com', '1993-12-12', $senhaPadrao, 'logistics', 0, 'log12345'],
         ];
 
         foreach ($staffUsers as $u) {

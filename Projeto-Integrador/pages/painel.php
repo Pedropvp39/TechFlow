@@ -911,8 +911,8 @@ require __DIR__ . '/../includes/header.php';
                 <input id="add_user_nasc" name="nascimento" type="date" required>
             </div>
             <div class="field field-password">
-                <label for="add_user_senha">Senha (8 caracteres)</label>
-                <input id="add_user_senha" name="senha" type="password" minlength="8" maxlength="8" required>
+                <label for="add_user_senha">Senha (8-16 caracteres)</label>
+                <input id="add_user_senha" name="senha" type="password" minlength="8" maxlength="16" required>
             </div>
             <div class="field" style="grid-column: 1 / -1;">
                 <label for="add_user_tipo">Perfil de Acesso / Cargo do Usuário</label>

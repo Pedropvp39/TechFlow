@@ -130,7 +130,7 @@
                     <small class="payment-note">Parcele em até <strong>12x sem juros</strong> no cartão.</small>
                 </div>
             </div>
-        </div>
+        </div>z
 
         <!-- Barra Inferior de Direitos e Dados Legais -->
         <div class="footer-bottom">
