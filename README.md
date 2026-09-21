@@ -260,3 +260,5 @@ php/
 ## 15. Observacao para producao
 
 Este projeto e uma base didatica. Antes de publicar, troque credenciais, remova dados de demonstracao, configure HTTPS, desative exibicao de erros, use variaveis de ambiente e revise regras de estoque, pagamento, auditoria e privacidade.
+ ## 16. Acesso Online
+ https://pedropvp39.github.io/Vendas_Online/
