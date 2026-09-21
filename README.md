@@ -23,7 +23,8 @@ Loja demonstrativa de pecas de PC feita em PHP, MySQL, HTML, CSS e JavaScript. O
 3. Inicie Apache e MySQL.
 4. Abra no navegador:
 
-   `http://localhost/Projeto-Integrador/Projeto-Integrador/index.html`
+   `http://localhost/Projeto-Integrador/
+   index.html`
 
    (ou execute o `ABRIR-SITE.bat`, que liga o Apache e abre o site sozinho)
 
