@@ -71,8 +71,14 @@ require __DIR__ . '/includes/header.php';
                     <?php foreach ($heroSlides as $indice => $imagem): ?>
                         <?php // O primeiro slide já começa ativo (visível) ?>
                         <div class="hero-image-slide <?= $indice === 0 ? 'is-active' : '' ?>" data-slide<?= $indice === 0 ? '' : ' aria-hidden="true"' ?>>
-                            <?php // Imagem de fundo do slide, montada com a URL base do site ?>
-                            <img src="<?= e($base . '/' . $imagem) ?>" alt="">
+                            <?php
+                                // PERFORMANCE: a primeira imagem (visível na abertura) carrega
+                                // imediatamente; as demais só quando forem necessárias
+                                // (loading="lazy"), economizando banda na primeira visita.
+                            ?>
+                            <img src="<?= e($base . '/' . $imagem) ?>"
+                                 alt=""
+                                 <?= $indice === 0 ? 'fetchpriority="high" decoding="async"' : 'loading="lazy" decoding="async"' ?>>
                         </div>
                     <?php endforeach; ?>
                 </div>
