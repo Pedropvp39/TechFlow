@@ -19,9 +19,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) {
         $aviso = 'Sessão expirada. Tente novamente.';
     } elseif (isset($_POST['excluir'])) {
-        delete_user($user['email']);
-        header('Location: ' . $base . '/index.php');
-        exit();
+        // Exclusão da própria conta: usa o id do usuário logado e encerra a
+        // sessão em seguida, para não ficar "logado" numa conta que não existe.
+        [$okExclusao, $msgExclusao] = excluir_conta_usuario((int) ($user['id'] ?? 0));
+        if ($okExclusao) {
+            logout_user();
+            header('Location: ' . $base . '/index.php?conta=excluida');
+            exit();
+        }
+        $aviso = $msgExclusao;
     } elseif (isset($_POST['adicionar_endereco'])) {
         $userId = (int) ($user['id'] ?? 0);
         $resEnd = adicionar_endereco_usuario($userId, [
@@ -116,10 +122,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $aviso = $erroUpload;
         }
     } elseif (isset($_POST['salvar_perfil'])) {
-        $novaSenha = $_POST['senha_nova'] ?? '';
-        $nascimentoPost = $_POST['nascimento'] ?? '';
-        [$validaNasc, $msgNasc] = validar_data_nascimento($nascimentoPost);
-        [$validaSenha, $msgSenha] = validar_senha($novaSenha, false);
+        $novaSenha = (string) ($_POST['senha_nova'] ?? '');
+        $nascimentoPost = (string) ($_POST['nascimento'] ?? '');
+
+        // O segundo parâmetro indica se o campo é obrigatório. A senha é
+        // opcional (em branco = manter a atual); a data é obrigatória.
+        [$validaNasc, $msgNasc] = validar_data_nascimento_com_mensagem($nascimentoPost, true);
+        $validaSenha = validar_senha($novaSenha, false);
+        $msgSenha = 'A senha deve ter entre 8 e 16 caracteres.';
 
         if (!$validaNasc) {
             $aviso = $msgNasc;
@@ -128,12 +138,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $dadosUpdate = [
                 'nascimento' => $nascimentoPost,
-                'senha_nova' => $novaSenha,
                 'telefone' => $_POST['telefone'] ?? '',
             ];
-            update_user($user['email'], $dadosUpdate);
-            $user = current_user();
-            $sucesso = 'Informações do perfil atualizadas com sucesso!';
+
+            // Só altera a senha quando o usuário realmente digitou uma nova.
+            if (trim($novaSenha) !== '') {
+                $dadosUpdate['senha_nova'] = $novaSenha;
+            }
+
+            if (update_user($user['email'], $dadosUpdate)) {
+                $user = current_user();
+                $sucesso = trim($novaSenha) !== ''
+                    ? 'Perfil e senha atualizados com sucesso!'
+                    : 'Informações do perfil atualizadas com sucesso!';
+            } else {
+                $aviso = 'Não foi possível salvar as alterações. Tente novamente.';
+            }
         }
     }
 }
@@ -192,6 +212,9 @@ require __DIR__ . '/../includes/header.php';
         <?php if ($flash): ?>
             <p class="alert alert-success" role="status"><?= e($flash['message']) ?></p>
         <?php endif; ?>
+        <?php if (isset($_GET['conta']) && $_GET['conta'] === 'excluida'): ?>
+            <p class="alert alert-success" role="status">Sua conta foi excluída com sucesso.</p>
+        <?php endif; ?>
         <?php if ($aviso): ?>
             <p class="alert alert-error" role="alert"><?= e($aviso) ?></p>
         <?php endif; ?>
@@ -236,7 +259,9 @@ require __DIR__ . '/../includes/header.php';
 
             <div class="panel-actions">
                 <button type="submit" class="btn">Salvar perfil</button>
-                <button type="submit" name="excluir" value="1" class="btn btn-danger"
+                <!-- formnovalidate: permite excluir a conta mesmo que algum campo
+                     opcional do perfil esteja inválido no momento. -->
+                <button type="submit" name="excluir" value="1" class="btn btn-danger" formnovalidate
                         onclick="return confirm('Tem certeza que deseja excluir sua conta? Esta ação não pode ser desfeita.');">
                     Excluir conta
                 </button>
@@ -400,7 +425,8 @@ document.addEventListener('DOMContentLoaded', function() {
     var previewContainer = document.getElementById('avatarPreviewContainer');
     var nascInput = document.getElementById('nascimento');
     var senhaInput = document.getElementById('senha_nova');
-    var form = document.querySelector('form');
+    // Só o formulário do perfil recebe a validação (o formulário do avatar fica de fora).
+    var form = document.querySelector('form[action$="dashboard.php"]:not([enctype])');
 
     if (avatarInput && previewContainer) {
         avatarInput.addEventListener('change', function(e) {
@@ -477,12 +503,13 @@ document.addEventListener('DOMContentLoaded', function() {
     function validarSenhaNova() {
         if (!senhaInput) return true;
         var val = senhaInput.value;
+        // Campo vazio = manter a senha atual (não é obrigatório).
         if (val === '') {
             senhaInput.setCustomValidity('');
             return true;
         }
-        if (val.length !== 8) {
-            senhaInput.setCustomValidity('A nova senha deve ter exatamente 8 caracteres (mínimo 8 e máximo 16).');
+        if (val.length < 8 || val.length > 16) {
+            senhaInput.setCustomValidity('A nova senha deve ter entre 8 e 16 caracteres.');
             return false;
         }
         senhaInput.setCustomValidity('');
@@ -496,8 +523,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (senhaInput) {
         senhaInput.addEventListener('input', function() {
-            if (senhaInput.value.length >= 8 && senhaInput.value.length > 16) {
-                senhaInput.value = senhaInput.value.substring(0, 8);
+            // Limita ao máximo permitido (16), sem cortar senhas de 9 a 16.
+            if (senhaInput.value.length > 16) {
+                senhaInput.value = senhaInput.value.substring(0, 16);
             }
             validarSenhaNova();
         });

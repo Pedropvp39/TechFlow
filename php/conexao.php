@@ -218,11 +218,52 @@ function db_connection_candidates(): array
 }
 
 /**
+ * Caminho do arquivo que guarda a conexão que funcionou nesta máquina.
+ *
+ * Guardar host/usuário/senha/porta em cache evita varrer todas as portas e
+ * combinações de senha a CADA página aberta — era isso que deixava o site lento
+ * (mais de 2 segundos por clique). A varredura acontece só na primeira vez.
+ */
+function db_connection_cache_file(): string
+{
+    return sys_get_temp_dir() . '/techflow_db_' . md5(__DIR__ . '|' . DB_NAME);
+}
+
+/**
+ * Lê a conexão salva em cache (ou null quando ainda não existe).
+ */
+function db_cached_credentials(): ?array
+{
+    $arquivo = db_connection_cache_file();
+    if (!is_file($arquivo)) {
+        return null;
+    }
+
+    $dados = @json_decode((string) @file_get_contents($arquivo), true);
+    if (!is_array($dados) || !isset($dados['host'], $dados['user'], $dados['pass'], $dados['port'])) {
+        return null;
+    }
+
+    return $dados;
+}
+
+/**
+ * Salva em cache a conexão que funcionou para as próximas páginas.
+ */
+function db_store_credentials(string $host, string $user, string $pass, int $port): void
+{
+    @file_put_contents(
+        db_connection_cache_file(),
+        json_encode(['host' => $host, 'user' => $user, 'pass' => $pass, 'port' => $port], JSON_UNESCAPED_UNICODE)
+    );
+}
+
+/**
  * Devolve somente as portas que estão realmente aceitando conexão.
  *
  * Isso é essencial para a página abrir rápido: antes, cada porta fechada
  * (3306, 3308, 3309...) era testada com todas as senhas até dar timeout.
- * Agora a porta é testada UMA vez com uma conexão de 0,5s.
+ * Agora a porta é testada UMA vez e o resultado fica salvo em cache.
  */
 function db_reachable_ports(): array
 {
@@ -231,13 +272,32 @@ function db_reachable_ports(): array
         return $cached;
     }
 
+    // Cache persistente: a lista de portas boas só é descoberta uma vez.
+    $arquivoCache = sys_get_temp_dir() . '/techflow_ports_' . md5(__DIR__ . '|' . DB_NAME);
+    if (is_file($arquivoCache)) {
+        $dados = @json_decode((string) @file_get_contents($arquivoCache), true);
+        if (is_array($dados) && !empty($dados)) {
+            $cached = array_map('intval', $dados);
+            return $cached;
+        }
+    }
+
+    // Testa primeiro a porta configurada (mais provável de responder) e as
+    // portas típicas de MySQL. As portas fechadas custam ~1s cada, por isso a
+    // lista é curta e o resultado é guardado.
     $cached = [];
     foreach (db_candidate_ports() as $port) {
-        // Timeout curto: porta que não responde em 0,5s é descartada.
-        $test = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.5);
+        // O stream_set_timeout não afeta fsockopen em conexão recusada, então
+        // usamos o timeout do próprio fsockopen.
+        $test = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.3);
         if (is_resource($test)) {
             fclose($test);
             $cached[] = (int) $port;
+        }
+
+        // Já encontrou portas suficientes? Evita testar as restantes (lentas).
+        if (count($cached) >= 2) {
+            break;
         }
     }
 
@@ -247,7 +307,19 @@ function db_reachable_ports(): array
         $cached = [DB_PORT, 3306, 3307];
     }
 
+    @file_put_contents($arquivoCache, json_encode($cached));
+
     return $cached;
+}
+
+/**
+ * Invalida os caches de conexão/portas (usado quando os dados salvos param de
+ * funcionar, por exemplo depois de trocar a senha do MySQL).
+ */
+function db_forget_connection_cache(): void
+{
+    @unlink(db_connection_cache_file());
+    @unlink(sys_get_temp_dir() . '/techflow_ports_' . md5(__DIR__ . '|' . DB_NAME));
 }
 
 /**
@@ -358,6 +430,34 @@ function db_connect(): mysqli
     // Conexão anterior inválida: descarta para não reutilizar objeto fechado.
     $conexao = null;
 
+    // ------------------------------------------------------------------
+    // 1) CAMINHO RÁPIDO: usa a conexão que já funcionou antes (cache).
+    //    Sem isso, toda página varria portas e senhas até achar o MySQL.
+    // ------------------------------------------------------------------
+    $salvo = db_cached_credentials();
+    if ($salvo) {
+        $try = null;
+        try {
+            $try = mysqli_init();
+            if ($try instanceof mysqli) {
+                @$try->options(MYSQLI_OPT_CONNECT_TIMEOUT, 2);
+                @$try->real_connect($salvo['host'], $salvo['user'], $salvo['pass'], '', (int) $salvo['port']);
+            }
+        } catch (Throwable $e) {
+            $try = null;
+        }
+
+        if ($try instanceof mysqli && !$try->connect_errno) {
+            $conexao = db_resolve_database($try);
+            $conexao->set_charset('utf8mb4');
+            return $conexao;
+        }
+
+        // O cache envelheceu (senha trocada / MySQL reiniciado em outra porta):
+        // limpa e segue para a varredura completa, que salvará um novo cache.
+        db_forget_connection_cache();
+    }
+
     // Tenta conectar usando a lista de credenciais até obter sucesso.
     // O timeout de 2s evita que uma tentativa lenta trave a página.
     foreach (db_connection_candidates() as [$host, $user, $pass, $port]) {
@@ -381,7 +481,8 @@ function db_connect(): mysqli
             continue;
         }
 
-        // Conectou: agora descobre qual é o banco de dados correto da máquina.
+        // Conectou: guarda nos próximos acessos e descobre o banco correto.
+        db_store_credentials($host, $user, $pass, (int) $port);
         $conexao = db_resolve_database($try);
         $conexao->set_charset('utf8mb4'); // Define o conjunto de caracteres como UTF-8
         return $conexao;
@@ -413,40 +514,6 @@ function db_add_column_if_missing(mysqli $conexao, string $table, string $column
 function db_ensure_schema(): void
 {
     try {
-        // Garante que o banco de dados escolhido existe antes das tabelas.
-        // Em uma máquina nova, o banco é criado aqui automaticamente.
-        $admin = null;
-        foreach (db_connection_candidates() as [$host, $user, $pass, $port]) {
-            $tentativa = null;
-            try {
-                $tentativa = mysqli_init();
-                if (!$tentativa instanceof mysqli) {
-                    continue;
-                }
-                // Timeout curto para não travar a primeira visita ao site.
-                @$tentativa->options(MYSQLI_OPT_CONNECT_TIMEOUT, 2);
-                @$tentativa->real_connect($host, $user, $pass, '', $port);
-            } catch (Throwable $e) {
-                $tentativa = null;
-            }
-
-            // Só aceita a tentativa que realmente conectou.
-            if ($tentativa instanceof mysqli && !$tentativa->connect_errno) {
-                $admin = $tentativa;
-                break;
-            }
-
-            // A tentativa que falhou é descartada sem close(): uma conexão
-            // mysqli que falhou já vem fechada pelo próprio PHP.
-            $tentativa = null;
-        }
-
-        if ($admin instanceof mysqli && !$admin->connect_errno) {
-            $dbName = str_replace('`', '``', DB_NAME);
-            $admin->query("CREATE DATABASE IF NOT EXISTS `$dbName` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-            $admin->close();
-        }
-
         $conexao = db_connect();
         $conexao->set_charset('utf8mb4');
         $conexao->query("CREATE TABLE IF NOT EXISTS usuarios (
@@ -666,5 +733,70 @@ function db_ensure_schema(): void
     }
 }
 
-db_ensure_schema();
+/**
+ * Cria o banco de dados (quando ainda não existe) usando a conexão informada.
+ *
+ * Esta etapa precisa de uma conexão SEM banco selecionado, por isso é separada
+ * da criação das tabelas.
+ */
+function db_create_database_if_missing(): void
+{
+    try {
+        foreach (db_connection_candidates() as [$host, $user, $pass, $port]) {
+            $tentativa = null;
+            try {
+                $tentativa = mysqli_init();
+                if (!$tentativa instanceof mysqli) {
+                    continue;
+                }
+                @$tentativa->options(MYSQLI_OPT_CONNECT_TIMEOUT, 2);
+                @$tentativa->real_connect($host, $user, $pass, '', $port);
+            } catch (Throwable $e) {
+                $tentativa = null;
+            }
+
+            if ($tentativa instanceof mysqli && !$tentativa->connect_errno) {
+                $dbName = str_replace('`', '``', DB_NAME);
+                $tentativa->query("CREATE DATABASE IF NOT EXISTS `$dbName` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+                $tentativa->close();
+                return;
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('db_create_database_if_missing: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Executa a verificação/criação do schema no máximo UMA vez por instalação.
+ *
+ * MOTIVO DE DESEMPENHO: antes, db_ensure_schema() era chamada em toda requisição
+ * e rodava dezenas de CREATE TABLE / ALTER TABLE, além de varrer portas do MySQL.
+ * Isso deixava cada página ~2 segundos mais lenta. Agora o schema só é conferido
+ * quando um arquivo-marcador ainda não existe (primeira execução da instalação).
+ */
+function db_schema_ensure_once(): void
+{
+    $marcador = sys_get_temp_dir() . '/techflow_schema_ok_' . md5(DB_NAME . DB_HOST);
+
+    // O schema já foi validado nesta máquina -> não repete as consultas.
+    if (is_file($marcador)) {
+        return;
+    }
+
+    db_create_database_if_missing();
+    db_ensure_schema();
+
+    // Cria o marcador somente se o banco respondeu (evita "marcar" falha).
+    try {
+        $db = db_connect();
+        if ($db instanceof mysqli && !$db->connect_errno) {
+            @file_put_contents($marcador, date('c'));
+        }
+    } catch (Throwable $e) {
+        error_log('db_schema_ensure_once: ' . $e->getMessage());
+    }
+}
+
+db_schema_ensure_once();
 
