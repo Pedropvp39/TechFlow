@@ -74,12 +74,26 @@ function cart_clear(): void
 
 /**
  * Itens do carrinho com dados do produto e subtotal.
+ *
+ * Busca a lista de produtos UMA vez e monta um índice por id, em vez de
+ * fazer uma consulta ao banco para cada item do carrinho (N+1).
  */
 function cart_items(): array
 {
+    $cart = cart_raw();
+    if (empty($cart)) {
+        return [];
+    }
+
+    // Índice id => produto, montado com uma única leitura do catálogo.
+    $indice = [];
+    foreach (get_produtos() as $p) {
+        $indice[$p['id']] = $p;
+    }
+
     $items = [];
-    foreach (cart_raw() as $id => $qty) {
-        $produto = get_produto((int) $id);
+    foreach ($cart as $id => $qty) {
+        $produto = $indice[(int) $id] ?? get_produto((int) $id);
         if (!$produto) {
             continue;
         }

@@ -24,6 +24,34 @@ $title = isset($page_title) ? $page_title . ' — TechFlow' : 'TechFlow — Peç
 
 // Define classe CSS personalizada para a tag <body> caso informada
 $bodyClass = $body_class ?? '';
+// ---------------------------------------------------------------------------
+// DADOS LEVES PARA O NAVEGADOR (PERFORMANCE)
+// ---------------------------------------------------------------------------
+// Antes, o <body> recebia TODOS os campos de TODOS os produtos em JSON e
+// também a lista de endereços do usuário EM TODAS as páginas. Isso inflava o
+// HTML de cada página (o catálogo inteiro era enviado à toa).
+//
+// Agora só enviamos o essencial: id, nome, preço, imagem e categoria — que é o
+// que o carrinho (cart.js) realmente usa para montar os itens.
+// Os dados completos continuam disponíveis nas páginas que precisam deles.
+$produtosParaCarrinho = [];
+try {
+    foreach (get_produtos() as $p) {
+        $produtosParaCarrinho[] = [
+            'id' => (int) $p['id'],
+            'nome' => $p['nome'],
+            'preco' => (float) $p['preco'],
+            'imagem' => $p['imagem'],
+            'categoria' => $p['categoria'],
+        ];
+    }
+} catch (Throwable $e) {
+    error_log('header produtos: ' . $e->getMessage());
+}
+
+// Endereços só são necessários para quem está logado. Visitantes não têm
+// endereço nenhum, então evitamos a consulta ao banco para eles.
+$enderecosParaJs = $user ? get_enderecos_usuario((int) ($user['id'] ?? 0)) : [];
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -44,8 +72,15 @@ $bodyClass = $body_class ?? '';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
-    <!-- Ícones (Font Awesome) usados no botão de tema sol/lua -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Ícones (Font Awesome) usados no botão de tema sol/lua.
+         Carregado de forma assíncrona (media=print + onload) para NÃO bloquear
+         a renderização da página; sem isso, o site só aparecia depois que o CDN
+         respondesse. -->
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+          media="print"
+          onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></noscript>
     <!-- Folha de estilos CSS principal da loja -->
     <link rel="stylesheet" href="<?= e($base) ?>/assets/css/style.css?v=<?= filemtime(__DIR__ . '/../assets/css/style.css') ?>">
 
@@ -55,7 +90,7 @@ $bodyClass = $body_class ?? '';
     <!-- Título da aba da página -->
     <title><?= e($title) ?></title>
 </head>
-<body class="<?= e($bodyClass) ?>" data-base="<?= e($base) ?>" data-csrf="<?= e(csrf_token()) ?>" data-logged-in="<?= current_user() ? '1' : '0' ?>" data-user-name="<?= e($user['nome'] ?? '') ?>" data-user-email="<?= e($user['email'] ?? '') ?>" data-user-phone="<?= e($user['telefone'] ?? '') ?>" data-user-cep="<?= e($user['cep'] ?? '') ?>" data-user-rua="<?= e($user['rua'] ?? '') ?>" data-user-numero="<?= e($user['numero'] ?? '') ?>" data-user-cidade="<?= e($user['cidade'] ?? '') ?>" data-user-estado="<?= e($user['estado'] ?? '') ?>" data-session-cart='<?= e(json_encode($_SESSION['cart'] ?? [])) ?>' data-products='<?= e(json_encode(get_produtos())) ?>' data-user-addresses='<?= e(json_encode(get_enderecos_usuario($user['id'] ?? 0))) ?>'>
+<body class="<?= e($bodyClass) ?>" data-base="<?= e($base) ?>" data-csrf="<?= e(csrf_token()) ?>" data-logged-in="<?= current_user() ? '1' : '0' ?>" data-user-name="<?= e($user['nome'] ?? '') ?>" data-user-email="<?= e($user['email'] ?? '') ?>" data-user-phone="<?= e($user['telefone'] ?? '') ?>" data-user-cep="<?= e($user['cep'] ?? '') ?>" data-user-rua="<?= e($user['rua'] ?? '') ?>" data-user-numero="<?= e($user['numero'] ?? '') ?>" data-user-cidade="<?= e($user['cidade'] ?? '') ?>" data-user-estado="<?= e($user['estado'] ?? '') ?>" data-session-cart='<?= e(json_encode($_SESSION['cart'] ?? [])) ?>' data-products='<?= e(json_encode($produtosParaCarrinho)) ?>' data-user-addresses='<?= e(json_encode($enderecosParaJs)) ?>'>
     <!-- Cabeçalho topo do site -->
     <header class="site-header">
         <nav class="site-nav" aria-label="Navegação principal">

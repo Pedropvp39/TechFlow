@@ -354,14 +354,71 @@ function delete_user(int $id): bool
         return false;
     }
 
+    return excluir_conta_usuario($id)[0];
+}
+
+/**
+ * Exclui a conta de um usuário (e os dados que dependem dela).
+ *
+ * Aceita o id OU o e-mail, então funciona tanto na área administrativa
+ * (que passa o id) quanto na tela "Meu perfil" (que passa o e-mail).
+ *
+ * Devolve [bool $ok, string $mensagem].
+ */
+function excluir_conta_usuario($idOuEmail): array
+{
     try {
         $db = db_connect();
+
+        // Descobre o id: pode ter vindo um id numérico ou um e-mail.
+        if (is_numeric($idOuEmail)) {
+            $userId = (int) $idOuEmail;
+        } else {
+            $email = strtolower(trim((string) $idOuEmail));
+            if ($email === '') {
+                return [false, 'Usuário inválido.'];
+            }
+            $busca = $db->prepare('SELECT id FROM usuarios WHERE LOWER(email) = ? LIMIT 1');
+            $busca->bind_param('s', $email);
+            $busca->execute();
+            $linha = $busca->get_result()->fetch_assoc();
+            $userId = (int) ($linha['id'] ?? 0);
+        }
+
+        if ($userId <= 0) {
+            return [false, 'Usuário não encontrado.'];
+        }
+
+        // Remove primeiro tudo que aponta para essa conta, para não deixar
+        // registros órfãos (endereços, carrinho, avaliações, recuperação).
+        foreach (['cart_items' => 'cart_id IN (SELECT id FROM carts WHERE user_id = ?)',
+                  'carts' => 'user_id = ?',
+                  'enderecos' => 'usuario_id = ?',
+                  'recuperacao_senhas' => 'usuario_id = ?',
+                  'avaliacoes_interacoes' => 'usuario_id = ?',
+                  'avaliacoes_produtos' => 'usuario_id = ?'] as $tabela => $condicao) {
+            try {
+                $stmtLimpa = $db->prepare("DELETE FROM `$tabela` WHERE $condicao");
+                if ($stmtLimpa) {
+                    $stmtLimpa->bind_param('i', $userId);
+                    $stmtLimpa->execute();
+                }
+            } catch (Throwable $e) {
+                // Tabela pode não existir em bases antigas: segue em frente.
+                error_log("excluir_conta_usuario ($tabela): " . $e->getMessage());
+            }
+        }
+
         $stmt = $db->prepare('DELETE FROM usuarios WHERE id = ?');
-        $stmt->bind_param('i', $id);
-        return $stmt->execute();
+        $stmt->bind_param('i', $userId);
+        if (!$stmt->execute() || $stmt->affected_rows <= 0) {
+            return [false, 'Não foi possível excluir a conta.'];
+        }
+
+        return [true, 'Sua conta foi excluída com sucesso.'];
     } catch (Throwable $e) {
-        error_log('delete_user: ' . $e->getMessage());
-        return false;
+        error_log('excluir_conta_usuario: ' . $e->getMessage());
+        return [false, 'Não foi possível excluir a conta agora.'];
     }
 }/**
  * ============================================================================
@@ -694,11 +751,46 @@ function validar_data_nascimento(?string $nascimento): bool
 
 /**
  * Valida uma senha (8 a 16 caracteres).
+ *
+ * O segundo parâmetro é opcional e serve para permitir senha vazia quando o
+ * campo "nova senha" é opcional no formulário (ex.: salvar apenas o perfil).
  */
-function validar_senha(?string $senha): bool
+function validar_senha(?string $senha, bool $obrigatoria = true): bool
 {
     $senha = (string) $senha;
+
+    // Senha vazia é aceita quando o campo não é obrigatório ("não alterar").
+    if (!$obrigatoria && $senha === '') {
+        return true;
+    }
+
     return strlen($senha) >= 8 && strlen($senha) <= 16;
+}
+
+/**
+ * Valida a data de nascimento e devolve [bool $ok, string $mensagem].
+ *
+ * Aceita nascimento vazio quando $obrigatoria = false (ex.: perfil de staff).
+ */
+function validar_data_nascimento_com_mensagem(?string $nascimento, bool $obrigatoria = true): array
+{
+    $nascimento = trim((string) $nascimento);
+
+    if ($nascimento === '') {
+        return $obrigatoria
+            ? [false, 'Informe sua data de nascimento.']
+            : [true, ''];
+    }
+
+    $idade = idade_de_nascimento($nascimento);
+    if ($idade < 16) {
+        return [false, 'Você deve ter no mínimo 16 anos completos.'];
+    }
+    if ($idade > 120) {
+        return [false, 'Informe uma data de nascimento válida.'];
+    }
+
+    return [true, ''];
 }
 
 /**

@@ -18,10 +18,15 @@ function normalize_produto(array $row): array
 function seed_initial_produtos(mysqli $db): void
 {
     try {
+        // DESEMPENHO: antes, este seed rodava 45 INSERT ... ON DUPLICATE KEY
+        // a CADA chamada de get_produtos() (ou seja, várias vezes por página).
+        // Agora ele só trabalha quando a tabela está realmente vazia.
         $check = $db->query("SELECT COUNT(*) AS total FROM produtos");
         if ($check) {
-            // Não interrompe quando já existem produtos: registros de demonstração
-            // ausentes ainda precisam ser criados para manter os links válidos.
+            $linha = $check->fetch_assoc();
+            if ((int) ($linha['total'] ?? 0) > 0) {
+                return;
+            }
         }
 
         $catalog = [
@@ -380,19 +385,32 @@ function adicionar_produto(array $dados, ?array $file = null): array
  */
 function get_relacionados(array $produto, int $limite = 3): array
 {
-    $rel = array_filter(
-        get_produtos(),
+    // Busca a lista de produtos UMA única vez (antes era buscada em loop).
+    $todos = get_produtos();
+
+    $rel = array_values(array_filter(
+        $todos,
         fn ($p) => $p['categoria'] === $produto['categoria'] && $p['id'] !== $produto['id']
-    );
+    ));
+
     // Completa com outros produtos se houver poucos da mesma categoria.
     if (count($rel) < $limite) {
-        foreach (get_produtos() as $p) {
-            if ($p['id'] !== $produto['id'] && !isset($rel[$p['id'] - 1])) {
+        $jaIncluidos = [];
+        foreach ($rel as $r) {
+            $jaIncluidos[$r['id']] = true;
+        }
+        foreach ($todos as $p) {
+            if ($p['id'] !== $produto['id'] && !isset($jaIncluidos[$p['id']])) {
                 $rel[] = $p;
+                $jaIncluidos[$p['id']] = true;
+                if (count($rel) >= $limite) {
+                    break;
+                }
             }
         }
     }
-    return array_slice(array_values($rel), 0, $limite);
+
+    return array_slice($rel, 0, $limite);
 }
 
 function normalize_categoria(array $row): array
@@ -715,6 +733,14 @@ function excluir_avaliacao_moderacao(int $avaliacaoId): array
 
 function seed_all_tables_if_empty(): void
 {
+    // DESEMPENHO: roda no máximo uma vez por instalação. Antes, estas 7
+    // consultas de COUNT eram feitas em TODA página (o data.php é incluído
+    // em praticamente todas as telas), sem necessidade.
+    $marcador = sys_get_temp_dir() . '/techflow_seed_ok_' . md5(__DIR__ . DB_NAME);
+    if (is_file($marcador)) {
+        return;
+    }
+
     try {
         $db = db_connect();
 
@@ -764,6 +790,9 @@ function seed_all_tables_if_empty(): void
         if ($check7 && (int) ($check7->fetch_assoc()['total'] ?? 0) === 0) {
             $db->query("INSERT INTO logistica_pedidos (pedido_id, codigo_rastreio, status_expedicao) VALUES (1, 'TF123456789BR', 'Em Separação no Estoque')");
         }
+
+        // Marca que os dados de demonstração já foram verificados nesta máquina.
+        @file_put_contents($marcador, date('c'));
     } catch (Throwable $e) {
         error_log('seed_all_tables_if_empty: ' . $e->getMessage());
     }
