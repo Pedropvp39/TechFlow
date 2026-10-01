@@ -8,7 +8,8 @@ Loja demonstrativa de pecas de PC feita em PHP, MySQL, HTML, CSS e JavaScript. O
 - Apache ativo.
 - MySQL ativo.
 - PHP 8.0 ou superior.
-- Deixar o site na pasta `Projeto-Integrador`.
+- Deixar o site na pasta `Techflow`.
+- Ao baixar mude o nome da pasta para `Techflow` e retire os arquivos da segunda pasta deixando todos apenas na pesta `Techflow` e pague a segunda pasta.
 - Extensoes PHP `mysqli`, `fileinfo` e `mbstring` habilitadas.
 
 ## 2. Instalacao no XAMPP
