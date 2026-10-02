@@ -24,7 +24,7 @@ Loja demonstrativa de pecas de PC feita em PHP, MySQL, HTML, CSS e JavaScript. O
 3. Inicie Apache e MySQL.
 4. Abra no navegador:
 
-   `http://localhost/Projeto-Integrador/
+   `http://localhost/Techflow/
    index.html`
 
    (ou execute o `ABRIR-SITE.bat`, que liga o Apache e abre o site sozinho)
@@ -210,18 +210,18 @@ Todos os arquivos devem retornar `No syntax errors detected`.
 ## 13. Problemas comuns
 
 ### Ao clicar em um link o arquivo e BAIXADO em vez de abrir a pagina
-Isso acontece quando o `index.html` e aberto direto pelo disco (endereco
+Isso acontece quando o `index.php` e aberto direto pelo disco (endereco
 `file:///C:/...`), clicando duas vezes no arquivo. Os links apontam para
 arquivos `.php`, e o PHP so funciona quando o site e aberto pelo Apache.
 
 **Solucao:** abra o site pelo endereco (ou use o `ABRIR-SITE.bat`):
 
-`http://localhost/Projeto-Integrador/Projeto-Integrador/index.html`
+`http://localhost/Techflow/index.php`
 
-Nunca clique duas vezes no `index.html` para abrir o site.
+Nunca clique duas vezes no `index.php` para abrir o site.
 
 ### Apache nao abre o projeto
-Confirme que Apache esta ativo e que a pasta esta dentro de `htdocs`. Verifique se a URL possui `/Projeto-Integrador/`.
+Confirme que Apache esta ativo e que a pasta esta dentro de `htdocs`. Verifique se a URL possui `/Techflow/`.
 
 ### Erro de conexao MySQL
 
